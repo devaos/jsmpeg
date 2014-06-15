@@ -47,6 +47,9 @@ var jsmpeg = window.jsmpeg = function( url, opts ) {
   if( url instanceof WebSocket ) {
     this.client = url;
     this.client.onopen = this.initSocketClient.bind(this);
+  } else if( typeof('io.Socket') != 'undefined' && url instanceof io.Socket ) {
+    this.client = url;
+    this.client.on('connect', this.initSocketClient.bind(this));
   }
   else {
     this.load(url);
@@ -70,8 +73,12 @@ jsmpeg.prototype.initSocketClient = function( client ) {
   this.nextPictureBuffer.chunkBegin = 0;
   this.nextPictureBuffer.lastWriteBeforeWrap = 0;
 
-  this.client.binaryType = 'arraybuffer';
-  this.client.onmessage = this.receiveSocketMessage.bind(this);
+  if( this.client instanceof WebSocket ) {
+    this.client.binaryType = 'arraybuffer';
+    this.client.onmessage = this.receiveSocketMessage.bind(this);
+  } else {
+    this.client.on('video', this.receiveSocketMessage.bind(this));
+  }
 
 	if( this.externalOpenCallback ) {
 		this.externalOpenCallback();
@@ -198,7 +205,12 @@ jsmpeg.prototype.didStartRecordingCallback = null;
 jsmpeg.prototype.recordBuffers = [];
 
 jsmpeg.prototype.canRecord = function(){
-  return (this.client && this.client.readyState == this.client.OPEN);
+  if( this.client && this.client instanceof WebSocket )
+    return (this.client.readyState == this.client.OPEN);
+  else if( this.client )
+    return (this.client.connected);
+
+  return false
 };
 
 jsmpeg.prototype.startRecording = function(callback) {
@@ -329,13 +341,20 @@ jsmpeg.prototype.play = function(file) {
   this.nextPictureBuffer.chunkBegin = 0;
   this.nextPictureBuffer.lastWriteBeforeWrap = 0;
 	this.waitForIntraFrame = true;
-  this.client.onmessage = this.receiveSocketMessage.bind(this);
+
+  if( this.client instanceof WebSocket )
+    this.client.onmessage = this.receiveSocketMessage.bind(this);
+  else
+    this.client.on('video', this.receiveSocketMessage.bind(this));
 };
 
 jsmpeg.prototype.pause = function(file) {
   this.playing = false;
 
-  this.client.onmessage = null;
+  if( this.client instanceof WebSocket )
+    this.client.onmessage = null;
+  else
+    this.client.removeListener('video', this.receiveSocketMessage.bind(this));
 };
 
 jsmpeg.prototype.stop = function(file) {
